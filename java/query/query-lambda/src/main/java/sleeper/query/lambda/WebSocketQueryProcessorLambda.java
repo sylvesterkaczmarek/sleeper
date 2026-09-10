@@ -107,18 +107,7 @@ public class WebSocketQueryProcessorLambda implements RequestHandler<APIGatewayV
                 statusReportDestination.put(WebSocketOutput.CONNECTION_ID, event.getRequestContext().getConnectionId());
                 query = query.withStatusReportDestination(statusReportDestination);
 
-                // Default to sending results back to client via WebSocket connection
-                if (query.getResultsPublisherConfig().get(ResultsOutput.DESTINATION) == null ||
-                        query.getResultsPublisherConfig().get(ResultsOutput.DESTINATION).equals(WebSocketOutput.DESTINATION_NAME)) {
-
-                    LOGGER.info("Updating resultsPublisherConfig for websocket output");
-                    Map<String, String> resultsPublisherConfig = new HashMap<>(query.getResultsPublisherConfig());
-                    resultsPublisherConfig.put(ResultsOutput.DESTINATION, WebSocketOutput.DESTINATION_NAME);
-                    resultsPublisherConfig.put(WebSocketOutput.ENDPOINT, endpoint);
-                    resultsPublisherConfig.put(WebSocketOutput.CONNECTION_ID, event.getRequestContext().getConnectionId());
-
-                    query = query.withResultsPublisherConfig(resultsPublisherConfig);
-                }
+                query = withWebSocketResultsPublisherConfig(query, endpoint, event.getRequestContext().getConnectionId());
 
                 LOGGER.info("Query to be processed: {}", query);
                 submitQueryForProcessing(query);
@@ -128,6 +117,29 @@ public class WebSocketQueryProcessorLambda implements RequestHandler<APIGatewayV
         APIGatewayV2WebSocketResponse response = new APIGatewayV2WebSocketResponse();
         response.setStatusCode(200);
         return response;
+    }
+
+    /**
+     * Configures query results to return to the current WebSocket connection unless another destination was requested.
+     *
+     * @param  query        the query to configure
+     * @param  endpoint     the WebSocket endpoint
+     * @param  connectionId the WebSocket connection ID
+     * @return              the configured query, or the original query when another destination was requested
+     */
+    static Query withWebSocketResultsPublisherConfig(Query query, String endpoint, String connectionId) {
+        Map<String, String> currentConfig = query.getResultsPublisherConfig();
+        String destination = currentConfig.get(ResultsOutput.DESTINATION);
+        if (destination != null && !destination.equals(WebSocketOutput.DESTINATION_NAME)) {
+            return query;
+        }
+
+        LOGGER.info("Updating resultsPublisherConfig for websocket output");
+        Map<String, String> resultsPublisherConfig = new HashMap<>(currentConfig);
+        resultsPublisherConfig.put(ResultsOutput.DESTINATION, WebSocketOutput.DESTINATION_NAME);
+        resultsPublisherConfig.put(WebSocketOutput.ENDPOINT, endpoint);
+        resultsPublisherConfig.put(WebSocketOutput.CONNECTION_ID, connectionId);
+        return query.withResultsPublisherConfig(resultsPublisherConfig);
     }
 
     private void sendErrorToClient(String endpoint, String connectionId, String errorMessage) {
